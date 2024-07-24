@@ -1,65 +1,35 @@
 package main
 
 import (
-	"database/sql"
-	"path/filepath"
 	"log"
+	"path/filepath"
 	"sync"
 
+	"mailboxes/db" // Import the store package
+
 	"github.com/spf13/viper"
-	_ "github.com/mattn/go-sqlite3"
 )
 
-// Mailbox struct represents a mailbox from the database
-type Mailbox struct {
-	ID        int
-	MPIID     string
-	Token     string
-	CreatedAt string // Assuming timestamp is read as string for simplicity
-}
-
-// User struct represents a user from the database
-type User struct {
-	ID           int
-	MailboxID    int
-	UserName     string
-	EmailAddress string
-	CreatedAt    string // Assuming timestamp is read as string for simplicity
-}
-
 // processUser is a fictional function to process each user
-func processUser(user User) {
+func processUser(user db.User) {
 	log.Printf("Processing user: User Name - %s, Mailbox Token - %s", user.UserName, "<fake_token>")
 }
 
 // Function to retrieve mailboxes and return them via a channel
-func RetrieveMailboxes(db *sql.DB) <-chan Mailbox {
-
-	mailboxChannel := make(chan Mailbox, 100) // Buffered channel with capacity 100
+func RetrieveMailboxes(store db.Store) <-chan db.Mailbox {
+	mailboxChannel := make(chan db.Mailbox) // Buffered channel with capacity 100
 
 	go func() {
 		defer close(mailboxChannel)
 
-		rows, err := db.Query("SELECT id, mpi_id, token, created_at FROM mailboxes")
+		mailboxes, err := store.AllMailboxes()
 		if err != nil {
-			log.Printf("Error querying mailboxes: %v", err)
+			log.Printf("Error retrieving mailboxes: %v", err)
 			return
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var mailbox Mailbox
-			err := rows.Scan(&mailbox.ID, &mailbox.MPIID, &mailbox.Token, &mailbox.CreatedAt)
-			if err != nil {
-				log.Printf("Error scanning mailbox row: %v", err)
-				continue
-			}
-			mailboxChannel <- mailbox
-		}
-
-		if err := rows.Err(); err != nil {
-			log.Printf("Error iterating over mailbox rows: %v", err)
-			return
+		for _, mb := range mailboxes {
+			mailboxChannel <- mb
 		}
 	}()
 
@@ -67,33 +37,20 @@ func RetrieveMailboxes(db *sql.DB) <-chan Mailbox {
 }
 
 // Function to retrieve users for a given mailbox ID and return them via a channel
-func RetrieveUsersForMailbox(db *sql.DB, mailboxID int) <-chan User {
-	userChannel := make(chan User, 100) // Buffered channel with capacity 100
+func RetrieveUsersForMailbox(store db.Store, mailboxID int) <-chan db.User {
+	userChannel := make(chan db.User, 100) // Buffered channel with capacity 100
 
 	go func() {
 		defer close(userChannel)
 
-		query := "SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?"
-		rows, err := db.Query(query, mailboxID)
+		users, err := store.UsersForMailbox(mailboxID)
 		if err != nil {
-			log.Printf("Error querying users for mailbox %d: %v", mailboxID, err)
+			log.Printf("Error retrieving users for mailbox %d: %v", mailboxID, err)
 			return
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var user User
-			err := rows.Scan(&user.ID, &user.MailboxID, &user.UserName, &user.EmailAddress, &user.CreatedAt)
-			if err != nil {
-				log.Printf("Error scanning user row: %v", err)
-				continue
-			}
+		for _, user := range users {
 			userChannel <- user
-		}
-
-		if err := rows.Err(); err != nil {
-			log.Printf("Error iterating over user rows: %v", err)
-			return
 		}
 	}()
 
@@ -101,18 +58,18 @@ func RetrieveUsersForMailbox(db *sql.DB, mailboxID int) <-chan User {
 }
 
 // Pipeline function to process mailboxes, retrieve users, and process each user
-func Pipeline(db *sql.DB) {
-	mailboxes := RetrieveMailboxes(db)
+func Pipeline(store db.Store) {
+	mailboxes := RetrieveMailboxes(store)
 	var wg sync.WaitGroup
 
-	for mailbox := range mailboxes {
+	for mb := range mailboxes {
 		wg.Add(1)
-		log.Printf("Processing %d mailbox", mailbox.ID)
+		log.Printf("Processing %d mailbox", mb.ID)
 
-		users := RetrieveUsersForMailbox(db, mailbox.ID)
+		users := RetrieveUsersForMailbox(store, mb.ID)
 
 		// Launch a goroutine to process users for each mailbox
-		go func(mb Mailbox) {
+		go func(mb db.Mailbox) {
 			defer wg.Done()
 
 			userCount := 0
@@ -122,14 +79,13 @@ func Pipeline(db *sql.DB) {
 			}
 
 			log.Printf("%d users processed for mailbox %d", userCount, mb.ID)
-		}(mailbox)
+		}(mb)
 	}
 
 	wg.Wait()
 }
 
-
-// Main function to initialize database connection and call the pipeline function
+// Main function to initialize configuration, database connection, and call the pipeline function
 func main() {
 	// Initialize viper for configuration
 	configPath := filepath.Join(".", "config.yaml")
@@ -143,12 +99,12 @@ func main() {
 	dbDriver := viper.GetString("database.driver")
 	dbPath := viper.GetString("database.path")
 
-	db, err := sql.Open(dbDriver, dbPath)
+	store, err := db.NewStore(dbDriver, dbPath)
 	if err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
+		log.Fatalf("Error setting up store: %v", err)
 	}
-	defer db.Close()
 
 	// Call the pipeline function to process mailboxes and users
-	Pipeline(db)
+	Pipeline(store)
 }
+
