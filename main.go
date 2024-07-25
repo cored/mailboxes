@@ -17,7 +17,7 @@ func processUser(user db.User) {
 
 // Function to retrieve mailboxes and return them via a channel
 func RetrieveMailboxes(store db.Store) <-chan db.Mailbox {
-	mailboxChannel := make(chan db.Mailbox) // Buffered channel with capacity 100
+	mailboxChannel := make(chan db.Mailbox)
 
 	go func() {
 		defer close(mailboxChannel)
@@ -38,7 +38,7 @@ func RetrieveMailboxes(store db.Store) <-chan db.Mailbox {
 
 // Function to retrieve users for a given mailbox ID and return them via a channel
 func RetrieveUsersForMailbox(store db.Store, mailboxID int) <-chan db.User {
-	userChannel := make(chan db.User, 100) // Buffered channel with capacity 100
+	userChannel := make(chan db.User)
 
 	go func() {
 		defer close(userChannel)
