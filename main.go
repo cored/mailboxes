@@ -15,43 +15,34 @@ func processUser(user db.User) {
 	log.Printf("Processing user: User Name - %s, Mailbox Token - %s", user.UserName, "<fake_token>")
 }
 
-// Function to retrieve mailboxes and return them via a channel
-func RetrieveMailboxes(store db.Store) <-chan db.Mailbox {
-	mailboxChan, err := store.AllMailboxes()
-	if err != nil {
-		log.Printf("Error retrieving mailboxes: %v", err)
-		return nil
-	}
-	return mailboxChan
-}
-
-// Function to retrieve users for a given mailbox ID and return them via a channel
-func RetrieveUsersForMailbox(store db.Store, mailboxID int) <-chan db.User {
-	userChan, err := store.UsersForMailbox(mailboxID)
-	if err != nil {
-		log.Printf("Error retrieving users for mailbox %d: %v", mailboxID, err)
-		return nil
-	}
-	return userChan
-}
-
 // Pipeline function to process mailboxes, retrieve users, and process each user
 func Pipeline(store db.Store) {
-	mailboxes := RetrieveMailboxes(store)
 	var wg sync.WaitGroup
 
-	for mb := range mailboxes {
+	// Retrieve mailboxes directly from the store
+	mailboxChan, err := store.AllMailboxes()
+	if err != nil {
+		log.Fatalf("Error retrieving mailboxes: %v", err)
+	}
+
+	for mb := range mailboxChan {
 		wg.Add(1)
 		log.Printf("Processing %d mailbox", mb.ID)
 
-		users := RetrieveUsersForMailbox(store, mb.ID)
+		// Retrieve users for each mailbox directly from the store
+		userChan, err := store.UsersForMailbox(mb.ID)
+		if err != nil {
+			log.Printf("Error retrieving users for mailbox %d: %v", mb.ID, err)
+			wg.Done()
+			continue
+		}
 
 		// Launch a goroutine to process users for each mailbox
 		go func(mb db.Mailbox) {
 			defer wg.Done()
 
 			userCount := 0
-			for user := range users {
+			for user := range userChan {
 				processUser(user)
 				userCount++
 			}
