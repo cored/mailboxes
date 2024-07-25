@@ -129,12 +129,3 @@ ConsumerLoop:
 
 	return users, nil
 }
-
-// Collect users from the channel into a slice
-func collectUsers(userChannel <-chan User) []User {
-	var users []User
-	for user := range userChannel {
-		users = append(users, user)
-	}
-	return users
-}
