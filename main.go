@@ -54,7 +54,7 @@ func Pipeline(store db.Store) {
 
 // Main function to initialize configuration, database connection, and call the pipeline function
 func main() {
-	configPath := filepath.Join(".", "config.yaml")
+	configPath := filepath.Join(".", "config/database.yaml")
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig()
 	if err != nil {
