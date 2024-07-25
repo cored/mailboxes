@@ -9,102 +9,169 @@ import (
 )
 
 func TestDBStore_AllMailboxes(t *testing.T) {
-	db, mock := setupMockDB(t)
-	defer db.Close()
-	defer func() {
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Errorf("There were unfulfilled expectations: %s", err)
-		}
-	}()
-
-	expectedMailboxes := []Mailbox{
-		{ID: 1, MPIID: "mpi123", Token: "token123", CreatedAt: "2024-07-23 12:00:00"},
-		{ID: 2, MPIID: "mpi456", Token: "token456", CreatedAt: "2024-07-23 13:00:00"},
+	tests := []struct {
+		name           string
+		expectedMailboxes []Mailbox
+		mockRows       *sqlmock.Rows
+		expectedError  error
+	}{
+		{
+			name: "Success with multiple mailboxes",
+			expectedMailboxes: []Mailbox{
+				{ID: 1, MPIID: "mpi123", Token: "token123", CreatedAt: "2024-07-23 12:00:00"},
+				{ID: 2, MPIID: "mpi456", Token: "token456", CreatedAt: "2024-07-23 13:00:00"},
+			},
+			mockRows: sqlmock.NewRows([]string{"id", "mpi_id", "token", "created_at"}).
+			AddRow(1, "mpi123", "token123", "2024-07-23 12:00:00").
+			AddRow(2, "mpi456", "token456", "2024-07-23 13:00:00"),
+			expectedError: nil,
+		},
+		{
+			name: "No mailboxes",
+			expectedMailboxes: []Mailbox{},
+			mockRows: sqlmock.NewRows([]string{"id", "mpi_id", "token", "created_at"}),
+			expectedError: nil,
+		},
+		{
+			name: "Error retrieving mailboxes",
+			expectedMailboxes: nil,
+			mockRows: sqlmock.NewRows([]string{}),
+			expectedError: sql.ErrNoRows,
+		},
 	}
 
-	// Expecting query to retrieve mailboxes
-	mock.ExpectQuery("SELECT id, mpi_id, token, created_at FROM mailboxes").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "mpi_id", "token", "created_at"}).
-			AddRow(expectedMailboxes[0].ID, expectedMailboxes[0].MPIID, expectedMailboxes[0].Token, expectedMailboxes[0].CreatedAt).
-			AddRow(expectedMailboxes[1].ID, expectedMailboxes[1].MPIID, expectedMailboxes[1].Token, expectedMailboxes[1].CreatedAt))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock := setupMockDB(t)
+			defer db.Close()
 
-	// Create DBStore instance
-	store := &DBStore{db: db}
+			// Setup mock expectations
+			if tt.expectedError != nil {
+				mock.ExpectQuery("SELECT id, mpi_id, token, created_at FROM mailboxes").WillReturnError(tt.expectedError)
+			} else {
+				mock.ExpectQuery("SELECT id, mpi_id, token, created_at FROM mailboxes").WillReturnRows(tt.mockRows)
+			}
 
-	// Call AllMailboxes method
-	mailboxChan, err := store.AllMailboxes()
-	if err != nil {
-		t.Fatalf("Error calling AllMailboxes: %v", err)
-	}
+			store := &DBStore{db: db}
 
-	// Verify the received mailboxes
-	var receivedMailboxes []Mailbox
-	for mb := range mailboxChan {
-		receivedMailboxes = append(receivedMailboxes, mb)
-	}
+			// Call AllMailboxes method
+			mailboxChan, err := store.AllMailboxes()
+			if err != nil {
+				if tt.expectedError == nil {
+					t.Fatalf("Error calling AllMailboxes: %v", err)
+				}
+				if err != tt.expectedError {
+					t.Errorf("Expected error %v, got %v", tt.expectedError, err)
+				}
+				return
+			}
 
-	if len(receivedMailboxes) != len(expectedMailboxes) {
-		t.Errorf("Expected %d mailboxes, got %d", len(expectedMailboxes), len(receivedMailboxes))
-	}
+			// Verify the received mailboxes
+			var receivedMailboxes []Mailbox
+			for mb := range mailboxChan {
+				receivedMailboxes = append(receivedMailboxes, mb)
+			}
 
-	for i := range expectedMailboxes {
-		if !reflect.DeepEqual(receivedMailboxes[i], expectedMailboxes[i]) {
-			t.Errorf("Expected mailbox %v, got %v", expectedMailboxes[i], receivedMailboxes[i])
-		}
+			if len(receivedMailboxes) != len(tt.expectedMailboxes) {
+				t.Errorf("Expected %d mailboxes, got %d", len(tt.expectedMailboxes), len(receivedMailboxes))
+			}
+
+			for i := range tt.expectedMailboxes {
+				if !reflect.DeepEqual(receivedMailboxes[i], tt.expectedMailboxes[i]) {
+					t.Errorf("Expected mailbox %v, got %v", tt.expectedMailboxes[i], receivedMailboxes[i])
+				}
+			}
+		})
 	}
 }
 
 func TestDBStore_UsersForMailbox(t *testing.T) {
-	db, mock := setupMockDB(t)
-	defer db.Close()
-	defer func() {
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Errorf("There were unfulfilled expectations: %s", err)
-		}
-	}()
-
-	mailboxID := 1
-	expectedUsers := []User{
-		{ID: 101, MailboxID: mailboxID, UserName: "user1", EmailAddress: "user1@example.com", CreatedAt: "2024-07-23 12:30:00"},
-		{ID: 102, MailboxID: mailboxID, UserName: "user2", EmailAddress: "user2@example.com", CreatedAt: "2024-07-23 12:45:00"},
+	tests := []struct {
+		name           string
+		mailboxID      int
+		expectedUsers  []User
+		mockRows       *sqlmock.Rows
+		expectedError  error
+	}{
+		{
+			name:      "Success with multiple users",
+			mailboxID: 1,
+			expectedUsers: []User{
+				{ID: 101, MailboxID: 1, UserName: "user1", EmailAddress: "user1@example.com", CreatedAt: "2024-07-23 12:30:00"},
+				{ID: 102, MailboxID: 1, UserName: "user2", EmailAddress: "user2@example.com", CreatedAt: "2024-07-23 12:45:00"},
+			},
+			mockRows: sqlmock.NewRows([]string{"id", "mailbox_id", "user_name", "email_address", "created_at"}).
+			AddRow(101, 1, "user1", "user1@example.com", "2024-07-23 12:30:00").
+			AddRow(102, 1, "user2", "user2@example.com", "2024-07-23 12:45:00"),
+			expectedError: nil,
+		},
+		{
+			name:      "No users",
+			mailboxID: 1,
+			expectedUsers: []User{},
+			mockRows: sqlmock.NewRows([]string{"id", "mailbox_id", "user_name", "email_address", "created_at"}),
+			expectedError: nil,
+		},
+		{
+			name:      "Error retrieving users",
+			mailboxID: 1,
+			expectedUsers: nil,
+			mockRows: sqlmock.NewRows([]string{}),
+			expectedError: sql.ErrNoRows,
+		},
 	}
 
-	// Expecting query to retrieve users for mailboxID
-	mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
-		WithArgs(mailboxID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "mailbox_id", "user_name", "email_address", "created_at"}).
-			AddRow(expectedUsers[0].ID, expectedUsers[0].MailboxID, expectedUsers[0].UserName, expectedUsers[0].EmailAddress, expectedUsers[0].CreatedAt).
-			AddRow(expectedUsers[1].ID, expectedUsers[1].MailboxID, expectedUsers[1].UserName, expectedUsers[1].EmailAddress, expectedUsers[1].CreatedAt))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock := setupMockDB(t)
+			defer db.Close()
 
-	// Create DBStore instance
-	store := &DBStore{db: db}
+			// Setup mock expectations
+			if tt.expectedError != nil {
+				mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
+				WithArgs(tt.mailboxID).
+				WillReturnError(tt.expectedError)
+			} else {
+				mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
+				WithArgs(tt.mailboxID).
+				WillReturnRows(tt.mockRows)
+			}
 
-	// Call UsersForMailbox method
-	userChan, err := store.UsersForMailbox(mailboxID)
-	if err != nil {
-		t.Fatalf("Error calling UsersForMailbox: %v", err)
-	}
+			store := &DBStore{db: db}
 
-	// Verify the received users
-	var receivedUsers []User
-	for user := range userChan {
-		receivedUsers = append(receivedUsers, user)
-	}
+			// Call UsersForMailbox method
+			userChan, err := store.UsersForMailbox(tt.mailboxID)
+			if err != nil {
+				if tt.expectedError == nil {
+					t.Fatalf("Error calling UsersForMailbox: %v", err)
+				}
+				if err != tt.expectedError {
+					t.Errorf("Expected error %v, got %v", tt.expectedError, err)
+				}
+				return
+			}
 
-	if len(receivedUsers) != len(expectedUsers) {
-		t.Errorf("Expected %d users, got %d", len(expectedUsers), len(receivedUsers))
-	}
+			// Verify the received users
+			var receivedUsers []User
+			for user := range userChan {
+				receivedUsers = append(receivedUsers, user)
+			}
 
-	for i := range expectedUsers {
-		if !reflect.DeepEqual(receivedUsers[i], expectedUsers[i]) {
-			t.Errorf("Expected user %v, got %v", expectedUsers[i], receivedUsers[i])
-		}
+			if len(receivedUsers) != len(tt.expectedUsers) {
+				t.Errorf("Expected %d users, got %d", len(tt.expectedUsers), len(receivedUsers))
+			}
+
+			for i := range tt.expectedUsers {
+				if !reflect.DeepEqual(receivedUsers[i], tt.expectedUsers[i]) {
+					t.Errorf("Expected user %v, got %v", tt.expectedUsers[i], receivedUsers[i])
+				}
+			}
+		})
 	}
 }
 
-// Mock database setup for testing
 func setupMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New() // Create a new mock database connection
 	if err != nil {
 		t.Fatalf("Error initializing mock database: %v", err)
 	}

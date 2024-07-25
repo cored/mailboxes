@@ -1,67 +1,41 @@
-# Writing a Data Pipeline in Go for Beginners
+## Writing a Data Pipeline in Go
 
-## Introduction
+### Introduction
 
-A data pipeline is a series of steps that process data from a source to a destination. We’ll build a basic pipeline to fetch mailboxes from a database, retrieve users for each mailbox, and process those users. We’ll use Go’s concurrency features, channels, and goroutines to handle data processing efficiently.
+In this tutorial, we will build a simple data pipeline in Go. Our goal is to retrieve data from a SQLite database, process it concurrently, and handle errors gracefully. We'll focus on separating data access logic from the pipeline logic, using specific dependencies for configuration, database interactions, and testing.
 
-## Prerequisites
+### Prerequisites
 
-Before you start, ensure you have:
+- **Go Programming Language**: Basic knowledge of Go syntax and concurrency.
+- **SQLite**: Understanding of SQLite as a lightweight database.
+- **Dependencies**: Familiarity with Go modules and package management.
 
-- Basic knowledge of Go programming
-- Go installed on your system
-- A text editor or IDE for Go development
+### Dependencies
 
-## Project Setup
+1. **`github.com/spf13/viper`**: For configuration management.
+2. **`github.com/DATA-DOG/go-sqlmock`**: For mocking SQL queries in tests.
+3. **`github.com/stretchr/testify`**: For assertions in tests (optional but recommended).
 
-### 1. Create the Project Structure
+### Project Structure
 
-Start by creating a new directory for your project:
+Here is a suggested directory structure:
 
-```bash
-mkdir data-pipeline
-cd data-pipeline
+```
+/project-root
+	/db
+		db.go
+		db_test.go
+	/main.go
+	/config.yaml
+	/scripts
+		run.sh
 ```
 
-Create the following files and directories:
+### 1. Data Access Layer
 
-```bash
-touch main.go
-touch db.go
-touch main_test.go
-mkdir config
-touch config/config.yaml
-```
+#### `db/db.go`
 
-### 2. Define the Database Schema
-
-For our example, we’ll use an SQLite database. Define the schema with two tables: `mailboxes` and `users`.
-
-**Create a SQL script (`setup.sql`) for initializing the database:**
-
-```sql
--- Create mailboxes table
-CREATE TABLE mailboxes (
-		id INTEGER PRIMARY KEY,
-		mpi_id VARCHAR(200),
-		token VARCHAR(200),
-		created_at TIMESTAMP
-);
-
--- Create users table
-CREATE TABLE users (
-		id INTEGER PRIMARY KEY,
-		mailbox_id INTEGER,
-		user_name VARCHAR(200),
-		email_address VARCHAR(200),
-		created_at TIMESTAMP,
-		FOREIGN KEY (mailbox_id) REFERENCES mailboxes(id)
-);
-```
-
-### 3. Implement the Database Access Layer
-
-In `db.go`, define the structures and methods to interact with the database.
+This file contains our data access logic. We define interfaces and concrete implementations for interacting with the database.
 
 **`db.go`**
 
@@ -73,35 +47,18 @@ import (
 	"log"
 )
 
-// Mailbox represents a mailbox record
-type Mailbox struct {
-	ID        int
-	MPIID     string
-	Token     string
-	CreatedAt string
-}
-
-// User represents a user record
-type User struct {
-	ID           int
-	MailboxID    int
-	UserName     string
-	EmailAddress string
-	CreatedAt    string
-}
-
-// Store interface for accessing data
+// Store defines the methods required for accessing data.
 type Store interface {
 	AllMailboxes() (<-chan Mailbox, error)
 	UsersForMailbox(mailboxID int) (<-chan User, error)
 }
 
-// DBStore implements the Store interface using SQLite
+// DBStore implements the Store interface using SQLite.
 type DBStore struct {
 	db *sql.DB
 }
 
-// NewDBStore initializes a new DBStore instance
+// NewDBStore initializes a new DBStore instance.
 func NewDBStore(dbDriver, dbSource string) (Store, error) {
 	db, err := sql.Open(dbDriver, dbSource)
 	if err != nil {
@@ -111,7 +68,7 @@ func NewDBStore(dbDriver, dbSource string) (Store, error) {
 	return &DBStore{db: db}, nil
 }
 
-// AllMailboxes retrieves all mailboxes from the database
+// AllMailboxes retrieves all mailboxes from the database.
 func (s *DBStore) AllMailboxes() (<-chan Mailbox, error) {
 	query := "SELECT id, mpi_id, token, created_at FROM mailboxes"
 	rows, err := s.db.Query(query)
@@ -120,9 +77,9 @@ func (s *DBStore) AllMailboxes() (<-chan Mailbox, error) {
 		return nil, err
 	}
 
-	mailboxChan := make(chan Mailbox)
+	mailboxChannel := make(chan Mailbox)
 	go func() {
-		defer close(mailboxChan)
+		defer close(mailboxChannel)
 		defer rows.Close()
 
 		for rows.Next() {
@@ -132,19 +89,18 @@ func (s *DBStore) AllMailboxes() (<-chan Mailbox, error) {
 				log.Printf("Error scanning mailbox row: %v", err)
 				continue
 			}
-			mailboxChan <- mb
+			mailboxChannel <- mb
 		}
 
 		if err := rows.Err(); err != nil {
 			log.Printf("Error iterating over mailbox rows: %v", err)
-			return
 		}
 	}()
 
-	return mailboxChan, nil
+	return mailboxChannel, nil
 }
 
-// UsersForMailbox retrieves all users for a given mailbox ID
+// UsersForMailbox retrieves users for a specific mailbox ID.
 func (s *DBStore) UsersForMailbox(mailboxID int) (<-chan User, error) {
 	query := "SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?"
 	rows, err := s.db.Query(query, mailboxID)
@@ -153,9 +109,9 @@ func (s *DBStore) UsersForMailbox(mailboxID int) (<-chan User, error) {
 		return nil, err
 	}
 
-	userChan := make(chan User)
+	userChannel := make(chan User)
 	go func() {
-		defer close(userChan)
+		defer close(userChannel)
 		defer rows.Close()
 
 		for rows.Next() {
@@ -165,20 +121,40 @@ func (s *DBStore) UsersForMailbox(mailboxID int) (<-chan User, error) {
 				log.Printf("Error scanning user row: %v", err)
 				continue
 			}
-			userChan <- user
+			userChannel <- user
 		}
 
 		if err := rows.Err(); err != nil {
 			log.Printf("Error iterating over user rows: %v", err)
-			return
 		}
 	}()
 
-	return userChan, nil
+	return userChannel, nil
+}
+
+// Mailbox represents a mailbox entity.
+type Mailbox struct {
+	ID        int
+	MPIID     string
+	Token     string
+	CreatedAt string
+}
+
+// User represents a user entity.
+type User struct {
+	ID           int
+	MailboxID    int
+	UserName     string
+	EmailAddress string
+	CreatedAt    string
 }
 ```
 
-### 4. Implement the Data Pipeline
+### 2. Data Pipeline
+
+#### `main.go`
+
+This file contains the pipeline logic that uses the `DBStore` to process data.
 
 **`main.go`**
 
@@ -191,6 +167,7 @@ import (
 	"sync"
 
 	"mailboxes/db" // Import the store package
+
 	"github.com/spf13/viper"
 )
 
@@ -203,6 +180,7 @@ func processUser(user db.User) {
 func Pipeline(store db.Store) {
 	var wg sync.WaitGroup
 
+	// Retrieve mailboxes directly from the store
 	mailboxChan, err := store.AllMailboxes()
 	if err != nil {
 		log.Fatalf("Error retrieving mailboxes: %v", err)
@@ -212,6 +190,7 @@ func Pipeline(store db.Store) {
 		wg.Add(1)
 		log.Printf("Processing %d mailbox", mb.ID)
 
+		// Retrieve users for each mailbox directly from the store
 		userChan, err := store.UsersForMailbox(mb.ID)
 		if err != nil {
 			log.Printf("Error retrieving users for mailbox %d: %v", mb.ID, err)
@@ -219,6 +198,7 @@ func Pipeline(store db.Store) {
 			continue
 		}
 
+		// Launch a goroutine to process users for each mailbox
 		go func(mb db.Mailbox) {
 			defer wg.Done()
 
@@ -237,6 +217,7 @@ func Pipeline(store db.Store) {
 
 // Main function to initialize configuration, database connection, and call the pipeline function
 func main() {
+	// Initialize viper for configuration
 	configPath := filepath.Join(".", "config.yaml")
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig()
@@ -244,6 +225,7 @@ func main() {
 		log.Fatalf("Error reading config file: %v", err)
 	}
 
+	// Set up database connection based on configuration
 	dbDriver := viper.GetString("database.driver")
 	dbPath := viper.GetString("database.path")
 
@@ -252,96 +234,196 @@ func main() {
 		log.Fatalf("Error setting up store: %v", err)
 	}
 
+	// Call the pipeline function to process mailboxes and users
 	Pipeline(store)
 }
 ```
 
-### 5. Testing
+### 3. Testing
 
-**`main_test.go`**
+Testing is crucial for verifying the correctness of your data pipeline. We use the `sqlmock` library to mock database interactions and verify that our data access methods behave as expected.
+
+#### `db/db_test.go`
+
+**`db_test.go`**
 
 ```go
-package main
+package db
 
 import (
-	"log"
+	"database/sql"
+	"reflect"
 	"testing"
-	"time"
-	"sync"
 
-	"mailboxes/db"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/assert"
 )
 
-// setupMockDB initializes a mock database connection and returns the database instance and sqlmock instance
+// setupMockDB initializes a mock database connection and returns the database instance and sqlmock instance.
 func setupMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New() // Create a new mock database connection
 	if err != nil {
 		t.Fatalf("Error initializing mock database: %v", err)
 	}
 	return db, mock
 }
 
-// TestPipeline tests the entire pipeline using MockStore
-func TestPipeline(t *testing.T) {
-	db, mock := setupMockDB(t)
-	defer db.Close()
+// TestDBStore_AllMailboxes tests the AllMailboxes method.
+func TestDBStore_AllMailboxes(t *testing.T) {
+	tests := []struct {
+		name            string
+		expectedRows    []Mailbox
+		expectedError   error
+	}{
+		{
+			name: "Successful retrieval",
+			expectedRows: []Mailbox{
+				{ID: 1, MPIID: "mpi123", Token: "token123", CreatedAt: "2024-07-23 12:00:00"},
+				{ID: 2, MPIID: "mpi456", Token: "token456", CreatedAt: "2024-07-23 13:00:00"},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Database error",
+			expectedRows: nil,
+			expectedError: sql.ErrNoRows, // Example error
+		},
+	}
 
-	mock.ExpectQuery("SELECT id, mpi_id, token, created_at FROM mailboxes").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "mpi_id", "token", "created_at"}).
-			AddRow(1, "mpi123", "token123", "2024-07-23 12:00:00").
-			AddRow(2, "mpi456", "token456", "2024-07-23 13:00:00"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock := setupMockDB(t)
+			defer db.Close()
+			defer func() {
+				if err := mock.ExpectationsWereMet(); err != nil {
+					t.Errorf("There were unfulfilled expectations: %s", err)
+				}
+			}()
 
-	mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
-		WithArgs(1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "mailbox_id", "user_name", "email_address", "created_at"}).
-			AddRow(101, 1, "user1", "user1@example.com", "2024-07-23 12:30:00").
-			AddRow(102, 1, "user2", "user2@example.com", "2024-07-23 12:45:00"))
+			if tt.expectedError == nil {
+				mock.ExpectQuery("SELECT id, mpi_id, token, created_at FROM mailboxes").
+					WillReturnRows(sqlmock.NewRows([]string{"id", "mpi_id", "token", "created_at"}).
+						AddRow(tt.expectedRows[0].ID, tt.expectedRows[0].MPIID, tt.expectedRows[0
 
-	mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
-		WithArgs(2).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "mailbox_id", "user_name", "email_address", "created_at"}).
-			AddRow(201, 2, "user3", "user3@example.com", "2024-07-23 13:30:00").
-			AddRow(202, 2, "user4", "user4@example.com", "2024-07-23 13:45:00"))
+].Token, tt.expectedRows[0].CreatedAt).
+						AddRow(tt.expectedRows[1].ID, tt.expectedRows[1].MPIID, tt.expectedRows[1].Token, tt.expectedRows[1].CreatedAt))
+			} else {
+				mock.ExpectQuery("SELECT id, mpi_id, token, created_at FROM mailboxes").
+					WillReturnError(tt.expectedError)
+			}
 
-	store := &db.DB
+			store := &DBStore{db: db}
+			mailboxChan, err := store.AllMailboxes()
+			if err != nil {
+				if tt.expectedError == nil {
+					t.Fatalf("Error calling AllMailboxes: %v", err)
+				}
+				return
+			}
 
-Store{db: db}
+			var receivedMailboxes []Mailbox
+			for mb := range mailboxChan {
+				receivedMailboxes = append(receivedMailboxes, mb)
+			}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		Pipeline(store)
-	}()
+			if len(receivedMailboxes) != len(tt.expectedRows) {
+				t.Errorf("Expected %d mailboxes, got %d", len(tt.expectedRows), len(receivedMailboxes))
+			}
 
-	wg.Wait()
+			for i := range tt.expectedRows {
+				if !reflect.DeepEqual(receivedMailboxes[i], tt.expectedRows[i]) {
+					t.Errorf("Expected mailbox %v, got %v", tt.expectedRows[i], receivedMailboxes[i])
+				}
+			}
+		})
+	}
+}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("There were unfulfilled expectations: %s", err)
+// TestDBStore_UsersForMailbox tests the UsersForMailbox method.
+func TestDBStore_UsersForMailbox(t *testing.T) {
+	tests := []struct {
+		name            string
+		mailboxID       int
+		expectedRows    []User
+		expectedError   error
+	}{
+		{
+			name: "Successful retrieval",
+			mailboxID: 1,
+			expectedRows: []User{
+				{ID: 101, MailboxID: 1, UserName: "user1", EmailAddress: "user1@example.com", CreatedAt: "2024-07-23 12:30:00"},
+				{ID: 102, MailboxID: 1, UserName: "user2", EmailAddress: "user2@example.com", CreatedAt: "2024-07-23 12:45:00"},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Database error",
+			mailboxID: 1,
+			expectedRows: nil,
+			expectedError: sql.ErrNoRows, // Example error
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock := setupMockDB(t)
+			defer db.Close()
+			defer func() {
+				if err := mock.ExpectationsWereMet(); err != nil {
+					t.Errorf("There were unfulfilled expectations: %s", err)
+				}
+			}()
+
+			if tt.expectedError == nil {
+				mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
+					WithArgs(tt.mailboxID).
+					WillReturnRows(sqlmock.NewRows([]string{"id", "mailbox_id", "user_name", "email_address", "created_at"}).
+						AddRow(tt.expectedRows[0].ID, tt.expectedRows[0].MailboxID, tt.expectedRows[0].UserName, tt.expectedRows[0].EmailAddress, tt.expectedRows[0].CreatedAt).
+						AddRow(tt.expectedRows[1].ID, tt.expectedRows[1].MailboxID, tt.expectedRows[1].UserName, tt.expectedRows[1].EmailAddress, tt.expectedRows[1].CreatedAt))
+			} else {
+				mock.ExpectQuery("SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?").
+					WithArgs(tt.mailboxID).
+					WillReturnError(tt.expectedError)
+			}
+
+			store := &DBStore{db: db}
+			userChan, err := store.UsersForMailbox(tt.mailboxID)
+			if err != nil {
+				if tt.expectedError == nil {
+					t.Fatalf("Error calling UsersForMailbox: %v", err)
+				}
+				return
+			}
+
+			var receivedUsers []User
+			for user := range userChan {
+				receivedUsers = append(receivedUsers, user)
+			}
+
+			if len(receivedUsers) != len(tt.expectedRows) {
+				t.Errorf("Expected %d users, got %d", len(tt.expectedRows), len(receivedUsers))
+			}
+
+			for i := range tt.expectedRows {
+				if !reflect.DeepEqual(receivedUsers[i], tt.expectedRows[i]) {
+					t.Errorf("Expected user %v, got %v", tt.expectedRows[i], receivedUsers[i])
+				}
+			}
+		})
 	}
 }
 ```
 
-### 6. Running the Program
+1. **Test Cases**: Each test case covers different scenarios, including successful data retrieval and handling of database errors.
 
-**Running the Program**
+2. **Table-Driven Tests**: We use table-driven tests to simplify test case management and improve readability. Each table entry represents a different test scenario.
 
-Ensure you have set up your `config.yaml` correctly. Then, run your Go program:
+3. **Mocking**: We use `sqlmock` to simulate database queries and responses, allowing us to test our logic without relying on a real database.
 
-```bash
-go run main.go
-```
+4. **Error Handling**: Testing various error scenarios ensures that our code gracefully handles unexpected issues and provides meaningful error messages.
 
-**Running the Tests**
 
-To run your tests, use the following command:
+In this tutorial, we built a simple data pipeline in Go, separating the data access logic from the pipeline processing logic.
 
-```bash
-go test -v
-```
+We used `sqlmock` for testing, which allows us to simulate database interactions and verify that our data access methods behave correctly. By organizing our code into well-defined modules and employing table-driven tests, we ensure that our data pipeline is robust and maintainable.
 
-Congratulations! You’ve successfully created a simple data pipeline in Go. This pipeline fetches mailboxes from a database, retrieves users for each mailbox, and processes those users concurrently. You’ve also learned how to write tests for your pipeline using mock databases to ensure everything works correctly.
-
-Happy coding!
+Feel free to expand on this tutorial by adding more features, handling additional edge cases, or integrating with other data sources.
