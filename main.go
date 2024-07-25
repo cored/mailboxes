@@ -99,7 +99,7 @@ func main() {
 	dbDriver := viper.GetString("database.driver")
 	dbPath := viper.GetString("database.path")
 
-	store, err := db.NewStore(dbDriver, dbPath)
+	store, err := db.NewDBStore(dbDriver, dbPath)
 	if err != nil {
 		log.Fatalf("Error setting up store: %v", err)
 	}

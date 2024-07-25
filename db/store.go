@@ -6,26 +6,21 @@ import (
 )
 
 // SQLiteStore implements the Store interface using SQLite
-type SQLiteStore struct {
+type DBStore struct {
 	db *sql.DB
 }
 
-// NewSQLiteStore creates a new SQLiteStore instance
-func NewSQLiteStore(db *sql.DB) Store {
-	return &SQLiteStore{db: db}
-}
-
-func NewStore(dbDriver, dbSource string) (Store, error) {
+func NewDBStore(dbDriver, dbSource string) (Store, error) {
 	db, err := sql.Open(dbDriver, dbSource)
 	if err != nil {
 		log.Printf("Error opening database: %v", err)
 		return nil, err
 	}
-	return NewSQLiteStore(db), nil
+	return &DBStore{db: db}, nil
 }
 
 // AllMailboxes retrieves all mailboxes from the database
-func (s *SQLiteStore) AllMailboxes() ([]Mailbox, error) {
+func (s *DBStore) AllMailboxes() ([]Mailbox, error) {
 	query := "SELECT id, mpi_id, token, created_at FROM mailboxes"
 
 	rows, err := s.db.Query(query)
@@ -55,7 +50,7 @@ func (s *SQLiteStore) AllMailboxes() ([]Mailbox, error) {
 }
 
 // UsersForMailbox retrieves all users for a given mailbox ID from the database
-func (s *SQLiteStore) UsersForMailbox(mailboxID int) ([]User, error) {
+func (s *DBStore) UsersForMailbox(mailboxID int) ([]User, error) {
 	query := "SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?"
 
 	rows, err := s.db.Query(query, mailboxID)
