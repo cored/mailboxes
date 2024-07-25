@@ -10,6 +10,7 @@ import (
 // SQLiteStore implements the Store interface using SQLite
 type DBStore struct {
 	db *sql.DB
+	log *log.Logger
 }
 
 // NewDBStore initializes a new DBStore instance.
@@ -19,7 +20,7 @@ func NewDBStore(dbDriver, dbSource string) (Store, error) {
 		log.Printf("Error opening database: %v", err)
 		return nil, err
 	}
-	return &DBStore{db: db}, nil
+	return &DBStore{db: db, log: log.Default()}, nil
 }
 
 // AllMailboxes retrieves all mailboxes from the database using channels and goroutines.
