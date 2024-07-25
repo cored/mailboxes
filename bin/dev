@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Exit immediately if a command exits with a non-zero status
+set -e
+
+# Define paths
+CONFIG_FILE="./config/database.yaml"
+DB_FILE="./db/test.db"
+BUILD_DIR="./"
+
+# Ensure the configuration file exists
+if [[ ! -f "$CONFIG_FILE" ]]; then
+	echo "Configuration file $CONFIG_FILE not found!"
+	exit 1
+fi
+
+# Ensure the database file exists
+if [[ ! -f "$DB_FILE" ]]; then
+	echo "Database file $DB_FILE not found!"
+	exit 1
+fi
+
+# Build the application
+echo "Building the application..."
+go build -o mailbox_processor main.go
+
+# Run the application
+echo "Running the application..."
+./mailbox_processor
+
+# Run the tests
+echo "Running tests..."
+go test -v
+
+# Indicate completion
+echo "Application executed and tests completed successfully."
