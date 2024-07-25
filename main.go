@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"mailboxes/db" // Import the store package
+	"mailboxes/db"
 
 	"github.com/spf13/viper"
 )
@@ -52,7 +52,6 @@ func Pipeline(store db.Store) {
 }
 
 
-// Main function to initialize configuration, database connection, and call the pipeline function
 func main() {
 	configPath := filepath.Join(".", "config/database.yaml")
 	viper.SetConfigFile(configPath)
