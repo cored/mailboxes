@@ -8,7 +8,7 @@
 	- The system initializes a database connection using configuration loaded from a `config.yaml` file. Configuration management is handled using the `github.com/spf13/viper` package.
 	- It establishes a connection to an SQLite database using the database driver (`dbDriver`) and path (`dbPath`) specified in the configuration file.
 
-### 2. DBStore Implementation
+### 2. DBStore
 
 - **DBStore Struct**:
 	- The `DBStore` struct implements the `db.Store` interface, providing methods to interact with the database.
@@ -23,36 +23,6 @@
 	- It starts by fetching mailboxes using `store.AllMailboxes()`, which returns a channel of `Mailbox` objects.
 	- For each retrieved mailbox, it concurrently retrieves users using `store.UsersForMailbox(mb.ID)` and processes each user in a separate goroutine.
 	- A `sync.WaitGroup` is used to ensure all user processing goroutines complete before the function finishes.
-
-## Trade-offs
-
-### 1. Concurrency vs. Resource Consumption
-
-- **Pros**:
-	- Goroutines (`go` keyword) enable concurrent fetching and processing of data, enhancing performance and throughput, particularly for I/O-bound operations.
-- **Cons**:
-	- Managing multiple goroutines and synchronizing them using `sync.WaitGroup` adds complexity and requires careful handling to avoid race conditions and resource contention.
-
-### 2. Memory Usage
-
-- **Pros**:
-	- Channels (`<-chan`) allow streaming of data, reducing memory overhead by processing items as they are retrieved from the database.
-- **Cons**:
-	- Open channels and goroutines can increase memory usage, especially with large datasets. Proper management and cleanup of resources are essential.
-
-### 3. Error Handling and Debugging
-
-- **Pros**:
-	- The implementation includes comprehensive error handling (`err` checks) to address potential database connection issues or query failures.
-- **Cons**:
-	- Debugging concurrent code and managing errors across multiple goroutines can be challenging, necessitating careful logging and error handling strategies.
-
-### 4. Scalability
-
-- **Pros**:
-	- The use of concurrency and data streaming via channels supports scalable data retrieval and processing, suitable for large datasets.
-- **Cons**:
-	- Horizontal scaling (across multiple servers or nodes) requires additional considerations for managing database connections and synchronization in distributed environments.
 
 ## Setup and Usage
 
