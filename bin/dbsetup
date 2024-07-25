@@ -1,0 +1,11 @@
+#!/bin/bash
+
+DB_NAME="test"
+DB_SCHEMA="./db/schema.sql"
+DB_FILE="./db/$DB_NAME.db"
+
+echo "Creating database $DB_FILE..."
+
+sqlite3 $DB_FILE < $DB_SCHEMA
+
+echo "Database created successfully."

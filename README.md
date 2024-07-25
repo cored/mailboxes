@@ -95,23 +95,18 @@
 		 ```
 
 2. **Execute the Script**:
-	 - Run the script using the SQLite command line tool:
+	 - Run the script `bin/dbsetup` to setup the database and add test data:
 		 ```sh
-		 sqlite3 path_to_your_database.db < schema.sql
+		./bin/dbsetup
 		 ```
 
 ### 2. Running the Program
 
 1. **Build the Application**:
-	 - Navigate to the project directory and build the application:
+	 - Navigate to the project directory and execute `/bin/dev`	to build and run
+	 the application:
 		 ```sh
-		 go build -o mailbox_processor main.go
-		 ```
-
-2. **Run the Application**:
-	 - Execute the compiled binary:
-		 ```sh
-		 ./mailbox_processor
+		 ./bin/dev
 		 ```
 
 ### 3. Running the Tests
