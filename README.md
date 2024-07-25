@@ -1,116 +1,147 @@
-# Mailboxes
+# Mailbox Processing System
 
-This Go program manages mailboxes and users by interacting with a database using the `database/sql` package. It utilizes `go-sqlmock` for mocking database interactions during testing.
+## Implementation Overview
 
-## Implementation
+### 1. Database Connection and Configuration
 
-### Components
+- **Configuration Management**:
+	- The system initializes a database connection using configuration loaded from a `config.yaml` file. Configuration management is handled using the `github.com/spf13/viper` package.
+	- It establishes a connection to an SQLite database using the database driver (`dbDriver`) and path (`dbPath`) specified in the configuration file.
 
-The program consists of the following main components:
+### 2. DBStore Implementation
 
-1. **Mailbox Struct**:
-	 - Represents a mailbox with attributes such as ID, MPIID, Token, and CreatedAt.
+- **DBStore Struct**:
+	- The `DBStore` struct implements the `db.Store` interface, providing methods to interact with the database.
+	- Key methods include:
+		- `AllMailboxes()`: Retrieves all mailboxes from the database and returns a channel (`<-chan db.Mailbox`) that streams each mailbox as it's fetched.
+		- `UsersForMailbox(mailboxID int)`: Retrieves users associated with a specific mailbox ID and returns a channel (`<-chan db.User`) that streams each user record.
 
-2. **User Struct**:
-	 - Represents a user associated with a mailbox, containing attributes like ID, MailboxID, UserName, EmailAddress, and CreatedAt.
+### 3. Pipeline Function (`Pipeline`)
 
-3. **Database Interaction**:
-	 - Uses `database/sql` to connect to a SQLite database (`github.com/mattn/go-sqlite3` driver).
-	 - Implements functions to retrieve mailboxes (`RetrieveMailboxes`) and users (`RetrieveUsersForMailbox`) from the database using SQL queries.
+- **Functionality**:
+	- The `Pipeline` function coordinates the process of retrieving mailboxes and their associated users.
+	- It starts by fetching mailboxes using `store.AllMailboxes()`, which returns a channel of `Mailbox` objects.
+	- For each retrieved mailbox, it concurrently retrieves users using `store.UsersForMailbox(mb.ID)` and processes each user in a separate goroutine.
+	- A `sync.WaitGroup` is used to ensure all user processing goroutines complete before the function finishes.
 
-4. **Processing Logic**:
-	 - **processUser(user User)**:
-		 - A fictional function that logs processing information about each user.
-	 - **Pipeline(db \*sql.DB)**:
-		 - Orchestrates the processing of mailboxes and users concurrently using goroutines and `sync.WaitGroup`.
+## Trade-offs
 
-5. **Main Function**:
-	 - Initializes configuration using `github.com/spf13/viper` from a `config.yaml` file.
-	 - Sets up database connection based on configuration.
-	 - Calls `Pipeline(db)` to initiate processing of mailboxes and users.
+### 1. Concurrency vs. Resource Consumption
 
-### Concurrency and Channel Usage
+- **Pros**:
+	- Goroutines (`go` keyword) enable concurrent fetching and processing of data, enhancing performance and throughput, particularly for I/O-bound operations.
+- **Cons**:
+	- Managing multiple goroutines and synchronizing them using `sync.WaitGroup` adds complexity and requires careful handling to avoid race conditions and resource contention.
 
-- **RetrieveMailboxes**:
-	- Retrieves mailboxes from the database and sends them over a channel (`mailboxChannel`), *dynamically sized based on the count of retrieved records*.
+### 2. Memory Usage
 
-- **RetrieveUsersForMailbox**:
-	- Retrieves users associated with a specific mailbox ID and sends them over a channel (`userChannel`).
+- **Pros**:
+	- Channels (`<-chan`) allow streaming of data, reducing memory overhead by processing items as they are retrieved from the database.
+- **Cons**:
+	- Open channels and goroutines can increase memory usage, especially with large datasets. Proper management and cleanup of resources are essential.
 
-- **Pipeline Function**:
-	- Concurrently processes each retrieved mailbox, spawns a goroutine for each mailbox to process its associated users
+### 3. Error Handling and Debugging
 
-## Setup Locally
+- **Pros**:
+	- The implementation includes comprehensive error handling (`err` checks) to address potential database connection issues or query failures.
+- **Cons**:
+	- Debugging concurrent code and managing errors across multiple goroutines can be challenging, necessitating careful logging and error handling strategies.
 
-To set up and run the Mailboxes program locally, follow these steps:
+### 4. Scalability
 
-### Prerequisites
+- **Pros**:
+	- The use of concurrency and data streaming via channels supports scalable data retrieval and processing, suitable for large datasets.
+- **Cons**:
+	- Horizontal scaling (across multiple servers or nodes) requires additional considerations for managing database connections and synchronization in distributed environments.
 
-- Go programming language installed (version 1.16 or higher recommended).
-- SQLite3 installed (if using SQLite as the database).
+## Setup and Usage
 
-### Steps
+### 1. Setting Up the Database Locally
 
-1. **Clone the Repository**
+1. **Create Database Schema**:
+	 - Use the provided SQL script to set up the database schema and sample data. Save the following script as `schema.sql`:
 
-	 ```bash
-	 git clone <repository-url>
-	 cd <repository-directory>
-	 ```
+		 ```sql
+		 -- Create mailboxes table
+		 CREATE TABLE mailboxes (
+				 id INTEGER PRIMARY KEY,
+				 mpi_id VARCHAR(200),
+				 token VARCHAR(200),
+				 created_at TIMESTAMP
+		 );
 
-2. **Install Dependencies**
+		 -- Create users table
+		 CREATE TABLE users (
+				 id INTEGER PRIMARY KEY,
+				 mailbox_id INTEGER,
+				 user_name VARCHAR(200),
+				 email_address VARCHAR(200),
+				 created_at TIMESTAMP,
+				 FOREIGN KEY (mailbox_id) REFERENCES mailboxes(id)
+		 );
 
-	 Use Go modules to install dependencies:
+		 -- Insert sample data into mailboxes table
+		 INSERT INTO mailboxes (id, mpi_id, token, created_at)
+		 VALUES
+				 (1, 'mpi123', 'token123', '2024-07-23 12:00:00'),
+				 (2, 'mpi456', 'token456', '2024-07-23 13:00:00');
 
-	 ```bash
-	 go mod tidy
-	 ```
+		 -- Insert sample data into users table
+		 INSERT INTO users (id, mailbox_id, user_name, email_address, created_at)
+		 VALUES
+				 (101, 1, 'user1', 'user1@example.com', '2024-07-23 12:30:00'),
+				 (102, 1, 'user2', 'user2@example.com', '2024-07-23 12:45:00'),
+				 (201, 2, 'user3', 'user3@example.com', '2024-07-23 13:15:00');
+		 ```
 
-3. **Create Configuration File**
+2. **Execute the Script**:
+	 - Run the script using the SQLite command line tool:
+		 ```sh
+		 sqlite3 path_to_your_database.db < schema.sql
+		 ```
 
-	 Create a `config.yaml` file in the root directory with the following content:
+### 2. Running the Program
 
-	 ```yaml
-	 database:
-		 driver: sqlite3
-		 path: ./test.db
-	 ```
+1. **Build the Application**:
+	 - Navigate to the project directory and build the application:
+		 ```sh
+		 go build -o mailbox_processor main.go
+		 ```
 
-	 Adjust `path` as necessary to point to the SQLite database file.
+2. **Run the Application**:
+	 - Execute the compiled binary:
+		 ```sh
+		 ./mailbox_processor
+		 ```
 
-4. **Initialize Database**
+### 3. Running the Tests
 
-	 Initialize the SQLite database with necessary tables and sample data.
-  ```bash
-    sqlite3 test.db < schema.sql
-  ```
+1. **Run Unit Tests**:
+	 - Ensure you have Go installed and the `go test` command available.
+	 - Run the tests using:
+		 ```sh
+		 go test -v
+		 ```
 
+2. **Test Output**:
+	 - Review test results in the console output for verification of functionality and correctness.
 
-5. **Build and Run**
+## Configuration
 
-	 Build and run the program using the following commands:
+- **Configuration File**:
+	- Create a `config.yaml` file in the root directory with the following structure:
+		```yaml
+		database:
+			driver: sqlite3
+			path: path_to_your_database.db
+		```
 
-	 ```bash
-	 go build -o mailboxes .
-	 ./mailboxes
-	 ```
+- **Adjust the `path`** according to your local database file location.
 
-	 This will compile the Go code into an executable `mailboxes` and execute it, which will connect to the database, retrieve mailboxes, and process users accordingly.
+## Additional Information
 
-## Running Tests
+- **Dependencies**:
+	- The project depends on the `github.com/spf13/viper` package for configuration management. Ensure it is included in your `go.mod` file.
 
-To run tests for the Mailboxes program, follow these steps:
-
-1. **Ensure Dependencies**
-
-	 Ensure that all dependencies, including testing libraries (`go-sqlmock`), are installed (already handled if `go mod tidy` was run).
-
-2. **Run Tests**
-
-	 Execute the tests using the `go test` command:
-
-	 ```bash
-	 go test ./...
-	 ```
-
-	 This command runs all tests in the current directory and subdirectories (`./...`). The tests will verify various aspects of the program, including database query execution, data retrieval, and processing logic.
+- **Logging**:
+	- The application uses standard logging to provide runtime information and debugging output.
