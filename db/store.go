@@ -19,7 +19,7 @@ func NewDBStore(dbDriver, dbSource string) (Store, error) {
 	return &DBStore{db: db}, nil
 }
 
-// AllMailboxes retrieves all mailboxes from the database
+// AllMailboxes retrieves all mailboxes from the database using channels and goroutines
 func (s *DBStore) AllMailboxes() ([]Mailbox, error) {
 	query := "SELECT id, mpi_id, token, created_at FROM mailboxes"
 
@@ -30,27 +30,52 @@ func (s *DBStore) AllMailboxes() ([]Mailbox, error) {
 	}
 	defer rows.Close()
 
-	var mailboxes []Mailbox
-	for rows.Next() {
-		var mb Mailbox
-		err := rows.Scan(&mb.ID, &mb.MPIID, &mb.Token, &mb.CreatedAt)
-		if err != nil {
-			log.Printf("Error scanning mailbox row: %v", err)
-			continue
-		}
-		mailboxes = append(mailboxes, mb)
-	}
+	// Channel to receive mailboxes asynchronously
+	mailboxChannel := make(chan Mailbox)
+	done := make(chan bool)
 
-	if err := rows.Err(); err != nil {
-		log.Printf("Error iterating over mailbox rows: %v", err)
-		return nil, err
+	// Concurrently fetch mailboxes and send them to the channel
+	go func() {
+		defer close(mailboxChannel)
+
+		for rows.Next() {
+			var mb Mailbox
+			err := rows.Scan(&mb.ID, &mb.MPIID, &mb.Token, &mb.CreatedAt)
+			if err != nil {
+				log.Printf("Error scanning mailbox row: %v", err)
+				continue
+			}
+			mailboxChannel <- mb
+		}
+
+		if err := rows.Err(); err != nil {
+			log.Printf("Error iterating over mailbox rows: %v", err)
+			return
+		}
+
+		done <- true // Signal that we're done sending data
+	}()
+
+	// Collect mailboxes from the channel into a slice
+	var mailboxes []Mailbox
+ConsumerLoop:
+	for {
+		select {
+		case mb, ok := <-mailboxChannel:
+			if !ok {
+				break ConsumerLoop // Channel closed
+			}
+			mailboxes = append(mailboxes, mb)
+		case <-done:
+			break ConsumerLoop // Done signal received
+		}
 	}
 
 	return mailboxes, nil
 }
 
 
-// UsersForMailbox retrieves all users for a given mailbox ID from the database using channels
+// UsersForMailbox retrieves all users for a given mailbox ID from the database using channels and goroutines
 func (s *DBStore) UsersForMailbox(mailboxID int) ([]User, error) {
 	query := "SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?"
 
@@ -62,7 +87,8 @@ func (s *DBStore) UsersForMailbox(mailboxID int) ([]User, error) {
 	defer rows.Close()
 
 	// Channel to receive users asynchronously
-	userChannel := make(chan User, 100) // Buffered channel with capacity 100
+	userChannel := make(chan User)
+	done := make(chan bool)
 
 	// Concurrently fetch users and send them to the channel
 	go func() {
@@ -82,9 +108,24 @@ func (s *DBStore) UsersForMailbox(mailboxID int) ([]User, error) {
 			log.Printf("Error iterating over user rows: %v", err)
 			return
 		}
+
+		done <- true // Signal that we're done sending data
 	}()
 
-	users := collectUsers(userChannel)
+	// Collect users from the channel into a slice
+	var users []User
+ConsumerLoop:
+	for {
+		select {
+		case user, ok := <-userChannel:
+			if !ok {
+				break ConsumerLoop // Channel closed
+			}
+			users = append(users, user)
+		case <-done:
+			break ConsumerLoop // Done signal received
+		}
+	}
 
 	return users, nil
 }
