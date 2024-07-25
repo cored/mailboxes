@@ -17,44 +17,22 @@ func processUser(user db.User) {
 
 // Function to retrieve mailboxes and return them via a channel
 func RetrieveMailboxes(store db.Store) <-chan db.Mailbox {
-	mailboxChannel := make(chan db.Mailbox)
-
-	go func() {
-		defer close(mailboxChannel)
-
-		mailboxes, err := store.AllMailboxes()
-		if err != nil {
-			log.Printf("Error retrieving mailboxes: %v", err)
-			return
-		}
-
-		for _, mb := range mailboxes {
-			mailboxChannel <- mb
-		}
-	}()
-
-	return mailboxChannel
+	mailboxChan, err := store.AllMailboxes()
+	if err != nil {
+		log.Printf("Error retrieving mailboxes: %v", err)
+		return nil
+	}
+	return mailboxChan
 }
 
 // Function to retrieve users for a given mailbox ID and return them via a channel
 func RetrieveUsersForMailbox(store db.Store, mailboxID int) <-chan db.User {
-	userChannel := make(chan db.User)
-
-	go func() {
-		defer close(userChannel)
-
-		users, err := store.UsersForMailbox(mailboxID)
-		if err != nil {
-			log.Printf("Error retrieving users for mailbox %d: %v", mailboxID, err)
-			return
-		}
-
-		for _, user := range users {
-			userChannel <- user
-		}
-	}()
-
-	return userChannel
+	userChan, err := store.UsersForMailbox(mailboxID)
+	if err != nil {
+		log.Printf("Error retrieving users for mailbox %d: %v", mailboxID, err)
+		return nil
+	}
+	return userChan
 }
 
 // Pipeline function to process mailboxes, retrieve users, and process each user
@@ -107,4 +85,3 @@ func main() {
 	// Call the pipeline function to process mailboxes and users
 	Pipeline(store)
 }
-

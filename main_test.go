@@ -1,9 +1,12 @@
 package main
 
 import (
+	"log"
 	"testing"
-	"mailboxes/db"
+	"time"
+	"sync"
 
+	"mailboxes/db"
 )
 
 // MockStore is a fake implementation of Store for testing purposes
@@ -15,15 +18,37 @@ type MockStore struct {
 }
 
 // AllMailboxes mocks retrieving all mailboxes
-func (m *MockStore) AllMailboxes() ([]db.Mailbox, error) {
+func (m *MockStore) AllMailboxes() (<-chan db.Mailbox, error) {
 	m.CountCalls++
-	return m.Mailboxes, m.Err
+	mailboxChan := make(chan db.Mailbox)
+
+	go func() {
+		defer close(mailboxChan)
+		for _, mb := range m.Mailboxes {
+			mailboxChan <- mb
+		}
+	}()
+
+	return mailboxChan, m.Err
 }
 
 // UsersForMailbox mocks retrieving users for a mailbox ID
-func (m *MockStore) UsersForMailbox(mailboxID int) ([]db.User, error) {
+func (m *MockStore) UsersForMailbox(mailboxID int) (<-chan db.User, error) {
 	m.CountCalls++
-	return m.Users[mailboxID], m.Err
+	userChan := make(chan db.User)
+
+	go func() {
+		defer close(userChan)
+		users, ok := m.Users[mailboxID]
+		if !ok {
+			return
+		}
+		for _, user := range users {
+			userChan <- user
+		}
+	}()
+
+	return userChan, m.Err
 }
 
 // TestRetrieveMailboxes tests RetrieveMailboxes function using MockStore
@@ -36,11 +61,11 @@ func TestRetrieveMailboxes(t *testing.T) {
 	}
 
 	// Call RetrieveMailboxes
-	mailboxes := RetrieveMailboxes(mockStore)
+	mailboxChan := RetrieveMailboxes(mockStore)
 
 	// Verify the received mailboxes
 	var receivedMailboxes []db.Mailbox
-	for mb := range mailboxes {
+	for mb := range mailboxChan {
 		receivedMailboxes = append(receivedMailboxes, mb)
 	}
 
@@ -68,12 +93,12 @@ func TestRetrieveUsersForMailbox(t *testing.T) {
 	}
 
 	// Call RetrieveUsersForMailbox
-	users := RetrieveUsersForMailbox(mockStore, 1)
+	userChan := RetrieveUsersForMailbox(mockStore, 1)
 
 	// Verify the received users
 	var receivedUsers []db.User
-	for u := range users {
-		receivedUsers = append(receivedUsers, u)
+	for user := range userChan {
+		receivedUsers = append(receivedUsers, user)
 	}
 
 	expectedUsers := mockStore.Users[1]
@@ -107,6 +132,45 @@ func TestPipeline(t *testing.T) {
 		},
 	}
 
+	// Set up a wait group to synchronize goroutines in Pipeline
+	var wg sync.WaitGroup
+
+	// Mock function to process a user
+	processUser := func(user db.User) {
+		log.Printf("Processing user: User Name - %s, Mailbox Token - %s", user.UserName, "<fake_token>")
+	}
+
+	// Mock pipeline function
+	pipeline := func(store db.Store) {
+		mailboxChan := RetrieveMailboxes(store)
+
+		for mb := range mailboxChan {
+			log.Printf("Processing %d mailbox", mb.ID)
+
+			userChan := RetrieveUsersForMailbox(store, mb.ID)
+			wg.Add(1)
+
+			// Launch a goroutine to process users for each mailbox
+			go func(mb db.Mailbox) {
+				defer wg.Done()
+
+				userCount := 0
+				for user := range userChan {
+					processUser(user)
+					userCount++
+				}
+
+				log.Printf("%d users processed for mailbox %d", userCount, mb.ID)
+			}(mb)
+		}
+	}
+
 	// Call Pipeline
-	Pipeline(mockStore)
+	go pipeline(mockStore)
+
+	// Allow some time for all goroutines to finish
+	time.Sleep(1 * time.Second)
+
+	// Wait for all goroutines to finish
+	wg.Wait()
 }

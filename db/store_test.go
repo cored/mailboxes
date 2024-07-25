@@ -8,7 +8,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-func TestSQLiteStore_AllMailboxes(t *testing.T) {
+func TestDBStore_AllMailboxes(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 	defer func() {
@@ -28,22 +28,33 @@ func TestSQLiteStore_AllMailboxes(t *testing.T) {
 			AddRow(expectedMailboxes[0].ID, expectedMailboxes[0].MPIID, expectedMailboxes[0].Token, expectedMailboxes[0].CreatedAt).
 			AddRow(expectedMailboxes[1].ID, expectedMailboxes[1].MPIID, expectedMailboxes[1].Token, expectedMailboxes[1].CreatedAt))
 
-	// Create SQLiteStore instance
-	store := NewSQLiteStore(db)
+	// Create DBStore instance
+	store := &DBStore{db: db}
 
 	// Call AllMailboxes method
-	mailboxes, err := store.AllMailboxes()
+	mailboxChan, err := store.AllMailboxes()
 	if err != nil {
-		t.Errorf("Error calling AllMailboxes: %v", err)
+		t.Fatalf("Error calling AllMailboxes: %v", err)
 	}
 
 	// Verify the received mailboxes
-	if !reflect.DeepEqual(mailboxes, expectedMailboxes) {
-		t.Errorf("Expected mailboxes %v, got %v", expectedMailboxes, mailboxes)
+	var receivedMailboxes []Mailbox
+	for mb := range mailboxChan {
+		receivedMailboxes = append(receivedMailboxes, mb)
+	}
+
+	if len(receivedMailboxes) != len(expectedMailboxes) {
+		t.Errorf("Expected %d mailboxes, got %d", len(expectedMailboxes), len(receivedMailboxes))
+	}
+
+	for i := range expectedMailboxes {
+		if !reflect.DeepEqual(receivedMailboxes[i], expectedMailboxes[i]) {
+			t.Errorf("Expected mailbox %v, got %v", expectedMailboxes[i], receivedMailboxes[i])
+		}
 	}
 }
 
-func TestSQLiteStore_UsersForMailbox(t *testing.T) {
+func TestDBStore_UsersForMailbox(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 	defer func() {
@@ -65,18 +76,29 @@ func TestSQLiteStore_UsersForMailbox(t *testing.T) {
 			AddRow(expectedUsers[0].ID, expectedUsers[0].MailboxID, expectedUsers[0].UserName, expectedUsers[0].EmailAddress, expectedUsers[0].CreatedAt).
 			AddRow(expectedUsers[1].ID, expectedUsers[1].MailboxID, expectedUsers[1].UserName, expectedUsers[1].EmailAddress, expectedUsers[1].CreatedAt))
 
-	// Create SQLiteStore instance
-	store := NewSQLiteStore(db)
+	// Create DBStore instance
+	store := &DBStore{db: db}
 
 	// Call UsersForMailbox method
-	users, err := store.UsersForMailbox(mailboxID)
+	userChan, err := store.UsersForMailbox(mailboxID)
 	if err != nil {
-		t.Errorf("Error calling UsersForMailbox: %v", err)
+		t.Fatalf("Error calling UsersForMailbox: %v", err)
 	}
 
 	// Verify the received users
-	if !reflect.DeepEqual(users, expectedUsers) {
-		t.Errorf("Expected users %v, got %v", expectedUsers, users)
+	var receivedUsers []User
+	for user := range userChan {
+		receivedUsers = append(receivedUsers, user)
+	}
+
+	if len(receivedUsers) != len(expectedUsers) {
+		t.Errorf("Expected %d users, got %d", len(expectedUsers), len(receivedUsers))
+	}
+
+	for i := range expectedUsers {
+		if !reflect.DeepEqual(receivedUsers[i], expectedUsers[i]) {
+			t.Errorf("Expected user %v, got %v", expectedUsers[i], receivedUsers[i])
+		}
 	}
 }
 

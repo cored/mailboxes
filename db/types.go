@@ -16,6 +16,6 @@ type User struct {
 }
 
 type Store interface {
-		AllMailboxes() ([]Mailbox, error)
-		UsersForMailbox(mailboxID int) ([]User, error)
+		AllMailboxes() (<-chan Mailbox, error)
+		UsersForMailbox(mailboxID int) (<-chan User, error)
 }
