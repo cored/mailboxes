@@ -49,7 +49,8 @@ func (s *DBStore) AllMailboxes() ([]Mailbox, error) {
 	return mailboxes, nil
 }
 
-// UsersForMailbox retrieves all users for a given mailbox ID from the database
+
+// UsersForMailbox retrieves all users for a given mailbox ID from the database using channels
 func (s *DBStore) UsersForMailbox(mailboxID int) ([]User, error) {
 	query := "SELECT id, mailbox_id, user_name, email_address, created_at FROM users WHERE mailbox_id = ?"
 
@@ -60,21 +61,39 @@ func (s *DBStore) UsersForMailbox(mailboxID int) ([]User, error) {
 	}
 	defer rows.Close()
 
-	var users []User
-	for rows.Next() {
-		var user User
-		err := rows.Scan(&user.ID, &user.MailboxID, &user.UserName, &user.EmailAddress, &user.CreatedAt)
-		if err != nil {
-			log.Printf("Error scanning user row: %v", err)
-			continue
-		}
-		users = append(users, user)
-	}
+	// Channel to receive users asynchronously
+	userChannel := make(chan User, 100) // Buffered channel with capacity 100
 
-if err := rows.Err(); err != nil {
-		log.Printf("Error iterating over user rows: %v", err)
-		return nil, err
-	}
+	// Concurrently fetch users and send them to the channel
+	go func() {
+		defer close(userChannel)
+
+		for rows.Next() {
+			var user User
+			err := rows.Scan(&user.ID, &user.MailboxID, &user.UserName, &user.EmailAddress, &user.CreatedAt)
+			if err != nil {
+				log.Printf("Error scanning user row: %v", err)
+				continue
+			}
+			userChannel <- user
+		}
+
+		if err := rows.Err(); err != nil {
+			log.Printf("Error iterating over user rows: %v", err)
+			return
+		}
+	}()
+
+	users := collectUsers(userChannel)
 
 	return users, nil
+}
+
+// Collect users from the channel into a slice
+func collectUsers(userChannel <-chan User) []User {
+	var users []User
+	for user := range userChannel {
+		users = append(users, user)
+	}
+	return users
 }
