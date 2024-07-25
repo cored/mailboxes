@@ -19,7 +19,6 @@ func processUser(user db.User) {
 func Pipeline(store db.Store) {
 	var wg sync.WaitGroup
 
-	// Retrieve mailboxes directly from the store
 	mailboxChan, err := store.AllMailboxes()
 	if err != nil {
 		log.Fatalf("Error retrieving mailboxes: %v", err)
@@ -29,7 +28,6 @@ func Pipeline(store db.Store) {
 		wg.Add(1)
 		log.Printf("Processing %d mailbox", mb.ID)
 
-		// Retrieve users for each mailbox directly from the store
 		userChan, err := store.UsersForMailbox(mb.ID)
 		if err != nil {
 			log.Printf("Error retrieving users for mailbox %d: %v", mb.ID, err)
@@ -37,7 +35,6 @@ func Pipeline(store db.Store) {
 			continue
 		}
 
-		// Launch a goroutine to process users for each mailbox
 		go func(mb db.Mailbox) {
 			defer wg.Done()
 
@@ -54,9 +51,9 @@ func Pipeline(store db.Store) {
 	wg.Wait()
 }
 
+
 // Main function to initialize configuration, database connection, and call the pipeline function
 func main() {
-	// Initialize viper for configuration
 	configPath := filepath.Join(".", "config.yaml")
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig()
@@ -64,7 +61,6 @@ func main() {
 		log.Fatalf("Error reading config file: %v", err)
 	}
 
-	// Set up database connection based on configuration
 	dbDriver := viper.GetString("database.driver")
 	dbPath := viper.GetString("database.path")
 
@@ -73,6 +69,5 @@ func main() {
 		log.Fatalf("Error setting up store: %v", err)
 	}
 
-	// Call the pipeline function to process mailboxes and users
 	Pipeline(store)
 }
