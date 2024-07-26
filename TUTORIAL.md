@@ -16,6 +16,13 @@ In this tutorial, we will build a simple data pipeline in Go. Our goal is to ret
 2. **`github.com/DATA-DOG/go-sqlmock`**: For mocking SQL queries in tests.
 3. **`github.com/stretchr/testify`**: For assertions in tests (optional but recommended).
 
+###	Overview
+
+We will create a simple data pipeline that retrieves mailboxes and users from a SQLite database. The solution in support of the following user stories:
+
+1. As a user, I want to retrieve all mailboxes from the database.
+2. As a user, I wan to retrieve all users for a specific mailbox.
+
 ### Project Structure
 
 Here is a suggested directory structure:
