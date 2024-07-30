@@ -23,6 +23,18 @@ We will create a simple data pipeline that retrieves mailboxes and users from a 
 1. As a user, I want to retrieve all mailboxes from the database.
 2. As a user, I wan to retrieve all users for a specific mailbox.
 
+A goroutine in Go follows a simple model: it is a function that runs concurrently with other goroutines in the same address space.
+
+Go promotes an approach in which shared values are passed through channels. Shared values are never actively shared by separate threads of execution. This means that only one goroutine can access the value at any given time, and data races cannot occur by design. Goroutines are lightweight and cost little more than the allocation of stack space.
+
+Instead of communicating by sharing memory, Go encourages sharing memory by communicating.
+
+Goroutines are multiplexed onto many OS threads. If one goroutine blocks, for example while waiting for I/O, other goroutines continue to run. The design of goroutines hides many complexities of thread creation and management.
+
+Channels, like maps, are allocated using `make`. The result is a reference to an underlying data structure. If an optional integer parameter is provided, it sets the buffer size for the channel. The default is zero for an unbuffered or synchronous channel.
+
+Unbuffered channels combine communication with synchronization.
+
 ### Project Structure
 
 Here is a suggested directory structure:
